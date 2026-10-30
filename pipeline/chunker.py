@@ -1,23 +1,24 @@
 """
 Splits a C source file into chunks to send to the LLM.
 
-v1 (now): naive whole-file or fixed-line-count chunking.
-v2 (later): AST-based chunking by function using pycparser or libclang,
-            so each chunk sent to the LLM is a complete function.
+v1 (now): fixed-line-count chunking. Most Juliet files are shorter than
+          max_lines, so they go to the model whole.
+v2 (later): chunk by function so each chunk is a complete function.
 """
 
 
-def chunk_file(filepath, max_lines=200):
-    """Naive chunking: splits a file into blocks of max_lines lines each.
+def chunk_text(text, max_lines=200):
+    """Split text into blocks of max_lines lines.
     Returns a list of (start_line, chunk_text) tuples.
     """
-    with open(filepath, "r") as f:
-        lines = f.readlines()
-
+    lines = text.splitlines(keepends=True)
     chunks = []
     for i in range(0, len(lines), max_lines):
         block = lines[i:i + max_lines]
-        start_line = i + 1
-        chunks.append((start_line, "".join(block)))
-
+        chunks.append((i + 1, "".join(block)))
     return chunks
+
+
+def chunk_file(filepath, max_lines=200):
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        return chunk_text(f.read(), max_lines)
