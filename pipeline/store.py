@@ -30,10 +30,11 @@ def save_scan(conn, input_name, tool, findings):
     scan_id = cursor.lastrowid
     for f in findings:
         conn.execute(
-            "INSERT INTO findings (scan_id, source_tool, file, line, cwe, severity, message)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO findings"
+            " (scan_id, source_tool, file, line, cwe, severity, message, suggested_fix)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (scan_id, f["source_tool"], normalize_path(f["file"]), f["line"],
-             f["cwe"], f["severity"], f["message"]),
+             f["cwe"], f["severity"], f["message"], f.get("suggested_fix")),
         )
     conn.commit()
     return scan_id

@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS findings (
     line INTEGER,
     cwe TEXT,
     severity TEXT,
-    message TEXT
+    message TEXT,
+    suggested_fix TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ground_truth (
