@@ -12,6 +12,6 @@ def index():
 @bp.route("/scan", methods=["POST"])
 def run_scan():
     # TODO: accept a GitHub repo URL or dataset selection,
-    # call the pipeline modules (chunker -> analyzer + llm_client -> comparison),
+    # call the pipeline modules (chunker -> analyzer + llm_client -> scorer),
     # store results via the db, and return/render the report
     return "Scan endpoint not yet implemented", 501
