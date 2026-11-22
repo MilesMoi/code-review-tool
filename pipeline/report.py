@@ -127,3 +127,10 @@ def read_source(name):
     if not path.is_file():
         return None
     return path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+def find_reports(conn, text, limit=30):
+    """Names of scanned files that contain the text, for the finder page."""
+    rows = conn.execute(
+        "SELECT DISTINCT input_name FROM scans WHERE instr(input_name, ?) > 0"
+        " ORDER BY input_name LIMIT ?", (text.lower(), limit))
+    return [row[0] for row in rows]
