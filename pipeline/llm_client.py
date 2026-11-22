@@ -10,13 +10,14 @@ import requests
 
 from config import CHOSEN_CWES, MODEL, OLLAMA_URL
 from pipeline.analyzer import normalize_cwe
-from pipeline.chunker import chunk_text
+from pipeline.chunker import chunk_with_context, estimate_tokens
 from pipeline.prep import hide_labels, strip_comments
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v1"  # change this whenever the prompt text changes
+PROMPT_VERSION = "v2"  # change this whenever the prompt text changes
 TIMEOUT = 180          # seconds; the first request also loads the model
+MAX_PROMPT_TOKENS = 6000  # num_ctx is 8192; the rest is room for the reply
 
 CWE_NAMES = {
     "CWE-121": "stack-based buffer overflow",
@@ -34,6 +35,7 @@ SYSTEM_PROMPT = """You are a C security reviewer. Find memory-safety flaws in th
 
 Rules:
 - Every line of code starts with its line number and a colon. Report that number.
+- Some code may be shown between the CONTEXT markers. It is there only to help you understand the code under review. Report findings only for lines between the CODE markers.
 - For "cwe", choose from this list only. Use "other" if nothing fits:
 ALLOWED_LIST
 - Report only flaws you can point to on a specific line. If there are none, return an empty list.
@@ -59,10 +61,23 @@ def number_lines(code_text, start_line):
     return "\n".join(f"{start_line + i}: {text}" for i, text in enumerate(lines))
 
 
-def build_prompt(numbered_code):
-    return ("Review the code between the markers.\n"
-            "=====BEGIN CODE=====\n" + numbered_code +
-            "\n=====END CODE=====")
+def number_context(context):
+    """Number the context lines. A gap in the numbers is shown as ..."""
+    out, previous = [], None
+    for number, text in context:
+        if previous is not None and number != previous + 1:
+            out.append("...")
+        out.append(f"{number}: {text}")
+        previous = number
+    return "\n".join(out)
+
+
+def build_prompt(numbered_code, numbered_context=""):
+    parts = ["Review the code between the CODE markers."]
+    if numbered_context:
+        parts += ["=====BEGIN CONTEXT=====", numbered_context, "=====END CONTEXT====="]
+    parts += ["=====BEGIN CODE=====", numbered_code, "=====END CODE====="]
+    return "\n".join(parts)
 
 
 def ask_model(prompt):
@@ -94,10 +109,19 @@ def parse_reply(raw):
     return data if isinstance(data, dict) else None
 
 
-def review_chunk(code_text, filepath, start_line=1):
-    """Review one chunk. Return (findings, info); info says how the call went."""
+def review_chunk(code_text, filepath, start_line=1, context=None):
+    """Review one chunk. Return (findings, info); info says how the call went.
+
+    context is [(line_number, text)] of code outside the chunk, shown to the
+    model for reading only.
+    """
     end_line = start_line + len(code_text.splitlines()) - 1
-    prompt = build_prompt(number_lines(code_text, start_line))
+    prompt = build_prompt(number_lines(code_text, start_line),
+                          number_context(context or []))
+    tokens = estimate_tokens(SYSTEM_PROMPT + prompt)
+    if tokens > MAX_PROMPT_TOKENS:
+        log.warning("Lines %d-%d: the prompt is about %d tokens and may be cut off",
+                    start_line, end_line, tokens)
     info = {"parsed": False, "retried": False, "dropped": 0, "raw": ""}
 
     parsed = None
@@ -129,7 +153,7 @@ def review_chunk(code_text, filepath, start_line=1):
             info["dropped"] += 1
             continue
         if not start_line <= line <= end_line:
-            info["dropped"] += 1  # a line that is not in the code
+            info["dropped"] += 1  # a line outside the chunk, such as one in the context
             continue
         findings.append({
             "source_tool": "llm",
@@ -157,8 +181,8 @@ def review_file(filepath, hide_answers=False):
     findings = []
     stats = {"model": MODEL, "prompt_version": PROMPT_VERSION,
              "chunks": 0, "parse_failures": 0, "retries": 0, "dropped": 0}
-    for start_line, chunk in chunk_text(text):
-        chunk_findings, info = review_chunk(chunk, str(filepath), start_line)
+    for start_line, chunk, context in chunk_with_context(text):
+        chunk_findings, info = review_chunk(chunk, str(filepath), start_line, context)
         findings += chunk_findings
         stats["chunks"] += 1
         stats["retries"] += int(info["retried"])
