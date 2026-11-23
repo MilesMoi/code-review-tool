@@ -38,7 +38,8 @@ for tool, found in scans.items():
         sys.exit(f"No saved scans for {tool}. Run run_batch.py first.")
 
 # Score every tool on the files that all of them were run on.
-common = set.intersection(*(set(found) for found in scans.values()))
+labelled = {fn["file"] for fn in load_functions(conn)}  # files that are in the answer key
+common = set.intersection(*(set(found) for found in scans.values())) & labelled
 if not common:
     sys.exit("The tools were run on different files, so there is nothing to compare.")
 functions = [fn for fn in load_functions(conn) if fn["file"] in common]

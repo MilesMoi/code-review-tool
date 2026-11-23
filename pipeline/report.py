@@ -108,6 +108,20 @@ def build_report(conn, name, source_lines=None):
             "rows": rows, "functions": function_rows, "summary": summary,
             "has_code": source_lines is not None}
 
+def build_repo_summary(conn, folder_name):
+    """One row per scanned file under a folder, with the number of findings
+    in that file from each tool's newest scan."""
+    prefix = folder_name.rstrip("/") + "/"
+    cursor = conn.execute(
+        "SELECT s.input_name, s.tool, COUNT(f.id) FROM scans s"
+        " LEFT JOIN findings f ON f.scan_id = s.id AND f.file = s.input_name"
+        " WHERE substr(s.input_name, 1, ?) = ? GROUP BY s.id ORDER BY s.id",
+        (len(prefix), prefix))
+    files = {}
+    for name, tool, count in cursor:
+        files.setdefault(name, {})[tool] = count  # a later scan replaces an earlier one
+    return [{"name": name, "short": name[len(prefix):], "counts": files[name]}
+            for name in sorted(files)]
 
 def is_inside(path, folder):
     """True if path is the folder or somewhere below it."""

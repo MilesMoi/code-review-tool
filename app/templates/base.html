@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Code review{% endblock %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; }
+    code, pre { font-family: Consolas, monospace; font-size: 0.9em; }
+    pre { margin: 0; white-space: pre-wrap; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #bbb; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+    th { background: #eee; }
+    .muted { color: #666; }
+    .flash { background: #fff4ce; border: 1px solid #e0c060; padding: 0.5rem 0.8rem; margin: 0.5rem 0; }
+    .fix { margin-top: 0.4rem; padding: 0.3rem 0.5rem; background: #eef6ee; border-left: 3px solid #4a8; }
+    .flawed { background: #fde8e8; }
+    .none { color: #999; }
+  </style>
+</head>
+<body>
+  {% with messages = get_flashed_messages() %}
+    {% for message in messages %}<div class="flash">{{ message }}</div>{% endfor %}
+  {% endwith %}
+  {% block body %}{% endblock %}
+</body>
+</html>

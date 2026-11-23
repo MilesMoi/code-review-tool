@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Repository scan{% endblock %}
+{% block body %}
+<p><a href="{{ url_for('routes.index') }}">&larr; Scan something else</a></p>
+<h1>Repository scan</h1>
+<p class="muted">Findings in each file, from each tool's newest scan. Open a file for the details.</p>
+<table>
+  <tr><th>File</th>{% for tool, label in tools %}<th>{{ label }}</th>{% endfor %}</tr>
+  {% for file in files %}
+    <tr>
+      <td><a href="{{ url_for('routes.report', name=file.name) }}">{{ file.short }}</a></td>
+      {% for tool, label in tools %}
+        <td>{% if tool in file.counts %}{{ file.counts[tool] }}{% else %}<span class="none">Not run</span>{% endif %}</td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+</table>
+{% endblock %}

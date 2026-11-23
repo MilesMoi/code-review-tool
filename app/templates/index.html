@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}AI-Assisted Code Review{% endblock %}
+{% block body %}
+<h1>AI-Assisted Code Review Tool</h1>
+<p>Scan one C file with Cppcheck, Flawfinder and the local model, and see all three side by side.</p>
+
+<form id="scan-form" method="post" action="{{ url_for('routes.scan') }}" enctype="multipart/form-data">
+  <p>
+    <label>Upload a C file:<br>
+      <input type="file" name="source" accept=".c"></label>
+  </p>
+    <p>
+    <label>Or a public GitHub repository:<br>
+      <input type="text" name="repo" placeholder="https://github.com/owner/name" size="60"></label>
+    <br><span class="muted">Scans up to 10 of its smallest .c files. With the model ticked this takes a while.</span>
+  </p>
+  <p>
+    Tools:
+    {% for tool, label in tools %}
+      <label><input type="checkbox" name="{{ tool }}" value="1" checked> {{ label }}</label>
+    {% endfor %}
+  </p>
+  <p><button type="submit" id="scan-button">Scan</button>
+     <span id="scan-wait" class="muted" hidden>Scanning. The model can take a minute or more.</span></p>
+</form>
+
+<h2>Open a saved report</h2>
+<p class="muted">Every file that was ever scanned has a report, find them here.</p>
+<form method="get" action="{{ url_for('routes.reports') }}">
+  <input type="text" name="find" placeholder="part of a file name, such as memcpy_01" size="50">
+  <button type="submit">Find</button>
+</form>
+
+<script>
+  document.getElementById("scan-form").addEventListener("submit", function () {
+    document.getElementById("scan-button").disabled = true;
+    document.getElementById("scan-wait").hidden = false;
+  });
+</script>
+{% endblock %}

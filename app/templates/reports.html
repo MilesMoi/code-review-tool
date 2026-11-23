@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Saved reports{% endblock %}
+{% block body %}
+<p><a href="{{ url_for('routes.index') }}">&larr; Back</a></p>
+<h1>Saved reports containing "{{ text }}"</h1>
+{% if not names %}
+  <p>No scanned file has that in its name.</p>
+{% else %}
+  <ul>
+    {% for name in names %}
+      <li><a href="{{ url_for('routes.report', name=name) }}">{{ name }}</a></li>
+    {% endfor %}
+  </ul>
+  {% if names|length == limit %}<p class="muted">Showing the first {{ limit }}. Type more of the name to narrow it down.</p>{% endif %}
+{% endif %}
+{% endblock %}

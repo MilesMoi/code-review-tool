@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Report: {{ report.short_name }}{% endblock %}
+{% block body %}
+<p><a href="{{ url_for('routes.index') }}">&larr; Scan another file</a></p>
+{% if repo_name %}<p><a href="{{ url_for('routes.repo', name=repo_name) }}">&larr; Back to the repository scan</a></p>{% endif %}
+<h1>Report: {{ report.short_name }}</h1>
+<p class="muted"><code>{{ report.name }}</code></p>
+
+<table>
+  <tr>
+    {% for t in report.tools %}
+      <th>{{ t.label }}</th>
+    {% endfor %}
+  </tr>
+  <tr>
+    {% for t in report.tools %}
+      <td>
+        {% if not t.ran %}
+          <span class="none">Not run</span>
+        {% else %}
+          {{ t.count }} finding{{ '' if t.count == 1 else 's' }} in this file
+          {% if t.elsewhere %}<br><span class="muted">{{ t.elsewhere }} more in other files, not shown</span>{% endif %}
+          <br><span class="muted">{{ t.started_at }}</span>
+          {% if t.model %}<br><span class="muted">{{ t.model }}, prompt {{ t.prompt }}</span>{% endif %}
+        {% endif %}
+      </td>
+    {% endfor %}
+  </tr>
+</table>
+
+{% if report.functions %}
+  <h2>Against the answer key</h2>
+  <p class="muted">This file is in the answer key. A tool detects a flawed function when it has a finding inside it, and raises a false alarm when it has a finding inside a safe one.</p>
+  <table>
+    <tr><th>Tool</th><th>Flawed functions detected</th><th>Safe functions flagged</th></tr>
+    {% for t in report.tools if t.ran %}
+      {% set s = report.summary[t.tool] %}
+      <tr><td>{{ t.label }}</td><td>{{ s.detected }} of {{ s.flawed }}</td><td>{{ s.false_alarms }} of {{ s.safe }}</td></tr>
+    {% endfor %}
+  </table>
+  <table>
+    <tr><th>Function</th><th>Lines</th><th>Answer key</th>
+      {% for t in report.tools %}<th>{{ t.label }}</th>{% endfor %}</tr>
+    {% for fn in report.functions %}
+      <tr class="{{ 'flawed' if fn.flawed }}">
+        <td><code>{{ fn.name }}</code></td>
+        <td>{{ fn.start }}-{{ fn.end }}</td>
+        <td>{{ 'flawed' if fn.flawed else 'safe' }}</td>
+        {% for t in report.tools %}
+          <td>{% if t.ran %}{{ fn.flags[t.tool] }}{% else %}<span class="none">&ndash;</span>{% endif %}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </table>
+{% endif %}
+
+<h2>Findings by line</h2>
+{% if not report.rows %}
+  <p>None of the tools reported a finding in this file.</p>
+{% else %}
+  <table>
+    <tr><th>Line</th>{% if report.has_code %}<th>Code</th>{% endif %}
+      {% for t in report.tools %}<th>{{ t.label }}</th>{% endfor %}</tr>
+    {% for row in report.rows %}
+      <tr>
+        <td>{{ row.line }}</td>
+        {% if report.has_code %}<td><pre>{{ row.code if row.code is not none else '' }}</pre></td>{% endif %}
+        {% for t in report.tools %}
+          <td>
+            {% for f in row.cells[t.tool] %}
+              <div>
+                <strong>{{ f.cwe or 'no CWE' }}</strong>{% if f.severity %} <span class="muted">({{ f.severity }})</span>{% endif %}<br>
+                {{ f.message or '' }}
+                {% if f.suggested_fix %}
+                  <div class="fix"><strong>Suggested fix (not applied):</strong> {{ f.suggested_fix }}</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </table>
+{% endif %}
+{% endblock %}
