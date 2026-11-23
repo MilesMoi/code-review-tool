@@ -10,7 +10,7 @@ import requests
 
 from config import CHOSEN_CWES, MODEL, OLLAMA_URL
 from pipeline.analyzer import normalize_cwe
-from pipeline.chunker import chunk_with_context, estimate_tokens
+from pipeline.chunker import build_sibling_context, chunk_with_context, estimate_tokens
 from pipeline.prep import hide_labels, strip_comments
 
 log = logging.getLogger(__name__)
@@ -74,10 +74,17 @@ def number_context(context):
     return "\n".join(out)
 
 
-def build_prompt(numbered_code, numbered_context=""):
+def build_prompt(numbered_code, numbered_context="", others=()):
     parts = ["Review the code between the CODE markers."]
+    if others:
+        parts[0] += (" Blocks marked OTHER FILE come from other files of the same"
+                     " program. They are there only to help you read the code, so"
+                     " report nothing for them.")
     if numbered_context:
         parts += ["=====BEGIN CONTEXT=====", numbered_context, "=====END CONTEXT====="]
+    for number, text in enumerate(others, start=1):
+        parts += [f"=====BEGIN OTHER FILE {number}=====", text,
+                  f"=====END OTHER FILE {number}====="]
     parts += ["=====BEGIN CODE=====", numbered_code, "=====END CODE====="]
     return "\n".join(parts)
 
@@ -111,7 +118,7 @@ def parse_reply(raw):
     return data if isinstance(data, dict) else None
 
 
-def review_chunk(code_text, filepath, start_line=1, context=None):
+def review_chunk(code_text, filepath, start_line=1, context=None, others=()):
     """Review one chunk. Return (findings, info); info says how the call went.
 
     context is [(line_number, text)] of code outside the chunk, shown to the
@@ -119,7 +126,7 @@ def review_chunk(code_text, filepath, start_line=1, context=None):
     """
     end_line = start_line + len(code_text.splitlines()) - 1
     prompt = build_prompt(number_lines(code_text, start_line),
-                          number_context(context or []))
+                          number_context(context or []), others)
     tokens = estimate_tokens(SYSTEM_PROMPT + prompt)
     if tokens > MAX_PROMPT_TOKENS:
         log.warning("Lines %d-%d: the prompt is about %d tokens and may be cut off",
@@ -169,22 +176,32 @@ def review_chunk(code_text, filepath, start_line=1, context=None):
     return findings, info
 
 
-def review_file(filepath, hide_answers=False):
+def review_file(filepath, hide_answers=False, siblings=()):
     """Review a whole file. Return (findings, stats).
 
     hide_answers=True is for Juliet files: it removes comments and renames
     labelled names so the model cannot read the answer.
+    siblings is the list of the other files of a multi-file case. The model
+    reads the parts of them that the file calls, and reports nothing for them.
     """
     with open(filepath, "r", encoding="utf-8", errors="replace") as f:
         text = f.read()
+    other_texts = []
+    for sibling in siblings:
+        with open(sibling, "r", encoding="utf-8", errors="replace") as f:
+            other_texts.append(f.read())
     if hide_answers:
-        text = hide_labels(strip_comments(text))
+        names = {}  # shared, so a name keeps its new spelling in every file
+        text = hide_labels(strip_comments(text), names)
+        other_texts = [hide_labels(strip_comments(t), names) for t in other_texts]
 
     findings = []
     stats = {"model": MODEL, "prompt_version": PROMPT_VERSION,
              "chunks": 0, "parse_failures": 0, "retries": 0, "dropped": 0}
     for start_line, chunk, context in chunk_with_context(text):
-        chunk_findings, info = review_chunk(chunk, str(filepath), start_line, context)
+        others = build_sibling_context(chunk, other_texts) if other_texts else ()
+        chunk_findings, info = review_chunk(chunk, str(filepath), start_line,
+                                            context, others)
         findings += chunk_findings
         stats["chunks"] += 1
         stats["retries"] += int(info["retried"])

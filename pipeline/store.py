@@ -15,7 +15,7 @@ PROMPT_FINGERPRINT = hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest()[:8]
 
 def save_scan(conn, input_name, tool, findings):
     """Save one run of one tool. Return the scan id."""
-    is_llm = tool == "llm"
+    is_llm = tool.startswith("llm")  # llm and llm_group
     cursor = conn.execute(
         "INSERT INTO scans (started_at, input_name, tool, model_name, prompt_version)"
         " VALUES (?, ?, ?, ?, ?)",

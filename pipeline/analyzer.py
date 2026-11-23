@@ -46,11 +46,14 @@ def _run(command):
 
 
 def run_cppcheck(filepath, include_dir=None):
+    """filepath is one path, or a list of paths that Cppcheck should analyze
+    together so it can follow calls from one file into another."""
+    paths = filepath if isinstance(filepath, (list, tuple)) else [filepath]
     command = ["cppcheck", "--xml", "--enable=all",
                "--suppress=missingIncludeSystem"]
     if include_dir:
         command += ["-I", str(include_dir)]
-    command.append(str(filepath))
+    command += [str(path) for path in paths]
 
     result = _run(command)
     if result is None or not result.stderr.strip():

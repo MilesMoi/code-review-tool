@@ -5,6 +5,8 @@ Examples:
     python score_all.py
     python score_all.py cppcheck flawfinder llm
     python score_all.py --cwe-only
+    python score_all.py cppcheck flawfinder llm --files multi
+    python score_all.py cppcheck_group flawfinder llm_group --files multi
 """
 
 import argparse
@@ -13,6 +15,7 @@ import sys
 from datetime import date
 
 import config
+from pipeline.groups import case_counts, file_kind
 from pipeline.scorer import (compare_tools, latest_scans, load_findings,
                              load_functions, score_by_cwe)
 from pipeline.store import PROMPT_FINGERPRINT, PROMPT_VERSION
@@ -28,10 +31,12 @@ parser.add_argument("--prompt", default=f"{PROMPT_VERSION}-{PROMPT_FINGERPRINT}"
                     help="which prompt version of the model scans to score")
 parser.add_argument("--cwe-only", action="store_true",
                     help="ignore findings that carry no CWE")
+parser.add_argument("--files", choices=["single", "multi", "all"], default="single",
+                    help="score single-file cases (the baseline), multi-file cases, or both")
 args = parser.parse_args()
 
 conn = sqlite3.connect(config.DB_PATH)
-scans = {tool: latest_scans(conn, tool, args.prompt if tool == "llm" else None)
+scans = {tool: latest_scans(conn, tool, args.prompt if tool.startswith("llm") else None)
          for tool in args.tools}
 for tool, found in scans.items():
     if not found:
@@ -40,6 +45,8 @@ for tool, found in scans.items():
 # Score every tool on the files that all of them were run on.
 labelled = {fn["file"] for fn in load_functions(conn)}  # files that are in the answer key
 common = set.intersection(*(set(found) for found in scans.values())) & labelled
+if args.files != "all":
+    common = {name for name in common if file_kind(name) == args.files}
 if not common:
     sys.exit("The tools were run on different files, so there is nothing to compare.")
 functions = [fn for fn in load_functions(conn) if fn["file"] in common]
@@ -54,8 +61,9 @@ for tool in args.tools:
 results["combined"] = score_by_cwe(pooled, functions)
 agreement, unique = compare_tools({t: results[t]["ALL"] for t in args.tools})
 
-print(f"Date {date.today()}   files {len(common)}   CWE-only {args.cwe_only}")
-if "llm" in args.tools:
+kind = "" if args.files == "single" else f"   {args.files}-file cases"
+print(f"Date {date.today()}   files {len(common)}   CWE-only {args.cwe_only}{kind}")
+if any(tool.startswith("llm") for tool in args.tools):
     print(f"Model scans scored: prompt {args.prompt}")
 for scope in results["combined"]:
     first = results["combined"][scope]
@@ -72,9 +80,13 @@ for scope in results["combined"]:
 print()
 print(f"Flawed functions found by two or more tools: {agreement}")
 print(f"Found by one tool only: {unique}")
+if args.files != "single":
+    for tool in args.tools:
+        caught, total = case_counts(functions, results[tool]["ALL"]["detected_keys"])
+        print(f"Multi-file cases caught by {tool}: {caught} of {total}")
 
 # Keep the latest numbers for each tool in the metrics table.
-suffix = " cwe-only" if args.cwe_only else ""
+suffix = (" cwe-only" if args.cwe_only else "") + ("" if args.files == "single" else f" {args.files}")
 for tool, by_scope in results.items():
     conn.execute("DELETE FROM metrics WHERE tool = ?", (tool + suffix,))
     for scope, r in by_scope.items():

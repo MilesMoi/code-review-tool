@@ -10,9 +10,12 @@ def strip_comments(source):
     return re.sub(r"/\*.*?\*/|//[^\n]*", blank, source, flags=re.DOTALL)
 
 
-def hide_labels(source):
+def hide_labels(source, names=None):
     # Give every labelled name a neutral one: func_1, func_2, ...
-    names = {}
+    # Pass the same names dictionary for every file of a multi-file case, so a
+    # function called in one file keeps its new name in the file that defines it.
+    if names is None:
+        names = {}
     def rename(match):
         word = match.group(0)
         if word not in names:

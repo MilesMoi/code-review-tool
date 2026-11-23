@@ -16,6 +16,9 @@ from pipeline.labels import find_functions
 from pipeline.prep import strip_comments
 
 CONTEXT_TOKENS = 1500    # the most tokens of context added to one chunk
+SIBLING_TOKENS = 1500    # the most tokens of other-file code added to one chunk
+SIBLING_HOPS = 4         # Juliet's longest chains pass through five files
+SIBLING_DECLARATIONS = 20  # the most declaration lines kept from one other file
 DECLARATION_LINES = 40   # the most top-of-file lines kept as context
 CALL = re.compile(r"\b(\w+)\s*\(")  # a name followed by an opening bracket
 
@@ -135,3 +138,55 @@ def chunk_with_context(text, max_lines=200, budget=CONTEXT_TOKENS):
         end = start + len(chunk.splitlines()) - 1
         result.append((start, chunk, build_context(text, start, end, budget)))
     return result
+
+def build_sibling_context(chunk_code, siblings, budget=SIBLING_TOKENS):
+    """Code from the other files of a multi-file case that a chunk depends on.
+
+    siblings is a list of file texts. Returns a list of texts, one for each
+    file that has something the chunk needs: that file's declarations, then
+    the functions the chunk calls, then the ones those call, up to
+    SIBLING_HOPS levels. The lines are not numbered, so the model has no line
+    number to report for them.
+    """
+    parsed, defined = [], {}
+    for index, text in enumerate(siblings):
+        functions = find_functions(text)
+        parsed.append((text.splitlines(), strip_comments(text).splitlines(), functions))
+        for name, first, last in functions:
+            defined.setdefault(name, (index, first, last))
+
+    wanted = set(CALL.findall(strip_comments(chunk_code)))
+    seen, order = set(), []
+    for _ in range(SIBLING_HOPS):
+        found = sorted(n for n in wanted if n in defined and n not in seen)
+        wanted = set()
+        for name in found:
+            seen.add(name)
+            order.append(name)
+            index, first, last = defined[name]
+            wanted |= set(CALL.findall("\n".join(parsed[index][1][first - 1:last])))
+
+    skip = ("#include", "#if", "#else", "#elif", "#endif")
+    parts, used = {}, 0  # file index -> list of text blocks
+    for name in order:
+        index, first, last = defined[name]
+        lines, clean, functions = parsed[index]
+        if index not in parts:  # first time this file is used: its declarations
+            inside = set()
+            for _, f, l in functions:
+                inside.update(range(f, l + 1))
+            kept = [lines[n - 1] for n in range(1, len(lines) + 1)
+                    if n not in inside and clean[n - 1].strip()
+                    and not clean[n - 1].lstrip().startswith(skip)]
+            kept = kept[:SIBLING_DECLARATIONS]
+            parts[index] = ["\n".join(kept)] if kept else []
+            used += estimate_tokens("\n".join(kept))
+        body = "\n".join(lines[first - 1:last])
+        if used + estimate_tokens(body) > budget:  # too long: keep only the header
+            head = signature_end(lines, first, last)
+            body = "\n".join(lines[first - 1:head]).rstrip() + " /* body not shown */"
+            if used + estimate_tokens(body) > budget:
+                continue
+        parts[index].append(body)
+        used += estimate_tokens(body)
+    return ["\n\n".join(parts[index]) for index in sorted(parts) if parts[index]]
